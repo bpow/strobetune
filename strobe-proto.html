@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strobe Tuner Prototype</title>
+<style>
+  :root { --bg: #111; --fg: #ddd; --muted: #888; --line: #333; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  button { background: #2a2a2a; color: var(--fg); border: 1px solid #444; border-radius: 4px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  button:hover { background: #333; }
+  #level { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #err { color: #f66; }
+  canvas { width: 100%; display: block; background: #000; border-radius: 6px; }
+  #trace { margin-top: 8px; }
+  .caption { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 12px; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px 8px; margin: 0; }
+  legend { color: var(--muted); padding: 0 4px; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+  label > span { flex: 1; }
+  input[type=range] { width: 110px; }
+  input[type=number] { width: 70px; }
+  select, input[type=number] { background: #222; color: var(--fg); border: 1px solid #444; border-radius: 3px; padding: 2px 4px; font: inherit; }
+  output { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px 16px; margin-top: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .stats b { color: var(--fg); font-weight: 500; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Strobe tuner prototype</h1>
+  <div class="bar">
+    <button id="run">Start</button>
+    <button id="reset">Clear bins</button>
+    <span id="level"></span>
+    <span id="err"></span>
+  </div>
+
+  <canvas id="leds"></canvas>
+  <canvas id="trace"></canvas>
+  <p class="caption">Trace: signed bin values (normalized). Vertical lines mark period boundaries of the first band.</p>
+
+  <div class="controls">
+    <fieldset>
+      <legend>Target</legend>
+      <label><span>Note (concert)</span><select id="note"></select></label>
+      <label><span>A4 reference (Hz)</span><input id="a4" type="number" value="440" min="400" max="480" step="0.5"></label>
+      <label><span><button id="detect">Detect pitch</button></span><output id="detect-o"></output></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Strand</legend>
+      <label><span>LEDs</span><input id="n" type="range" min="8" max="144" value="60"><output id="n-o"></output></label>
+      <label><span>Periods across strand</span>
+        <select id="k"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select></label>
+      <label><span>Layout</span><select id="layout"><option value="strip">Strip</option><option value="ring">Ring</option></select></label>
+      <label><span>Colors</span><select id="colormode">
+        <option value="mono">Mono</option>
+        <option value="octave">RGB period bands</option>
+        <option value="chord">Major chord 3:4:5 (R:G:B)</option>
+      </select></label>
+      <div id="rgbset" hidden>
+        <label><span>Red periods</span><select id="r"><option value="0">off</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></label>
+        <label><span>Green periods</span><select id="g"><option value="0">off</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></label>
+        <label><span>Blue periods</span><select id="b"><option value="0">off</option><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Averaging &amp; display</legend>
+      <label><span>Time constant τ</span><input id="tau" type="range" min="0" max="100" value="56"><output id="tau-o"></output></label>
+      <label><span>Rectify input (|x|)</span><input id="rectify" type="checkbox"></label>
+      <label><span>Display</span><select id="mode"><option value="positive">Positive half</option><option value="bipolar">Bipolar (red + / green −)</option></select></label>
+      <label><span>Sharpness γ</span><input id="gamma" type="range" min="0.5" max="4" step="0.1" value="2"><output id="gamma-o"></output></label>
+      <label><span>Auto gain</span><input id="agc" type="checkbox" checked></label>
+      <label><span>Manual gain</span><input id="gain" type="range" min="-20" max="60" value="20"><output id="gain-o"></output></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Filter</legend>
+      <label><span>Bandpass at target</span><select id="bp"><option value="0">Off</option><option value="1">1 stage</option><option value="2">2 stages</option></select></label>
+      <label><span>Q</span><input id="q" type="range" min="0.5" max="20" step="0.5" value="5"><output id="q-o"></output></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Input</legend>
+      <label><span>Source</span><select id="source"><option value="tone">Test tone</option><option value="mic">Microphone</option><option value="both">Mic + tone</option></select></label>
+      <label><span>Tone waveform</span><select id="wave"><option value="brass">Brass-like</option><option>sine</option><option>sawtooth</option><option>square</option><option>triangle</option></select></label>
+      <label><span>Tone plays chord 3:4:5</span><input id="chordtone" type="checkbox"></label>
+      <label><span>Tone detune</span><input id="detune" type="range" min="-50" max="50" step="0.5" value="0"><output id="detune-o"></output></label>
+      <label><span>Tone level</span><input id="tone" type="range" min="0" max="100" value="50"><output id="tone-o"></output></label>
+      <label><span>Noise level</span><input id="noise" type="range" min="0" max="100" value="0"><output id="noise-o"></output></label>
+      <label><span>Hear test tone</span><input id="monitor" type="checkbox"></label>
+      <label><span>Sample rate</span><select id="sr"><option value="0">Native</option><option>48000</option><option>44100</option><option>32000</option><option>22050</option><option>16000</option><option>8000</option></select></label>
+    </fieldset>
+  </div>
+
+  <div class="stats" id="stats"></div>
+</main>
+
+<script>
+const WORKLET = `
+const silence = new Float32Array(128);
+class Strobe extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.sq = 0; this.count = 0;
+    this.configure({ f0: 116.54, n: 60, tau: 0.25, rectify: false, bands: [{ ratio: 1, periods: 4 }] });
+    this.port.onmessage = e => e.data === 'reset' ? this.bins.forEach(b => b.fill(0)) : this.configure(e.data);
+  }
+  configure(c) {
+    const shape = c.bands.map(b => b.periods).join();
+    if (!this.bins || c.n !== this.n || shape !== this.shape) {
+      this.bins = c.bands.map(() => new Float32Array(c.n));
+      this.phases = c.bands.map(() => 0);
+      this.shape = shape;
+    }
+    Object.assign(this, c);
+    // each bin receives sampleRate/n writes per second on average
+    this.alpha = 1 - Math.exp(-c.n / (sampleRate * c.tau));
+  }
+  process(inputs) {
+    const n = this.n, a = this.alpha;
+    // band j reads input j so each band can have its own bandpass chain
+    this.bands.forEach((band, j) => {
+      const x = inputs[j]?.[0] || silence, b = this.bins[j], p = band.periods;
+      const inc = this.f0 * band.ratio / sampleRate;
+      let ph = this.phases[j];
+      for (let i = 0; i < x.length; i++) {
+        const v = this.rectify ? Math.abs(x[i]) : x[i];
+        ph += inc;
+        if (ph >= p) ph -= p;
+        const idx = (ph / p * n) | 0;
+        b[idx] += a * (v - b[idx]);
+      }
+      this.phases[j] = ph;
+    });
+    const x0 = inputs[0][0] || silence;
+    for (let i = 0; i < x0.length; i++) this.sq += x0[i] * x0[i];
+    this.count += x0.length;
+    if (this.count >= sampleRate / 60) {
+      this.port.postMessage({ bins: this.bins.map(b => b.slice()), rms: Math.sqrt(this.sq / this.count) });
+      this.sq = 0; this.count = 0;
+    }
+    return true;
+  }
+}
+registerProcessor('strobe', Strobe);
+`;
+
+const $ = id => document.getElementById(id);
+const NOTE_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+const AMBER = [255, 170, 40];
+const BAND_COLORS = { r: [255, 40, 30], g: [40, 255, 70], b: [60, 110, 255] };
+
+// just-intonation ratio, color, nearest equal-tempered semitone offset
+const CHORD = [[3 / 4, 'r', -5], [1, 'g', 0], [5 / 4, 'b', 4]];
+
+const noteName = m => `${NOTE_NAMES[m % 12]}${Math.floor(m / 12) - 1}`;
+for (let m = 24; m <= 72; m++) $('note').add(new Option(noteName(m), m, false, m === 46));
+
+const f0 = () => +$('a4').value * 2 ** ((+$('note').value - 69) / 12);
+const tau = () => 10 * 300 ** (+$('tau').value / 100) / 1000;
+
+function bands() {
+  const mode = $('colormode').value, k = +$('k').value;
+  if (mode === 'chord') return CHORD.map(([ratio, id, semis]) => ({ ratio, semis, periods: k, color: BAND_COLORS[id] }));
+  if (mode === 'octave')
+    return ['r', 'g', 'b'].map(id => ({ ratio: 1, periods: +$(id).value, color: BAND_COLORS[id] })).filter(b => b.periods > 0);
+  return [{ ratio: 1, periods: k, color: AMBER }];
+}
+
+const config = () => ({
+  f0: f0(), n: +$('n').value, tau: tau(), rectify: $('rectify').checked,
+  bands: bands().map(({ ratio, periods }) => ({ ratio, periods })),
+});
+
+let ctx, node, sum, analyser, chains, wiredStages, voices, oscGain, monitorGain, noiseGain, micGain, micSrc, brassWave;
+let micStream, micPromise, latest = null, rms = 0;
+
+async function start() {
+  await stop();
+  $('err').textContent = '';
+  try {
+    const sr = +$('sr').value;
+    ctx = new AudioContext(sr ? { sampleRate: sr } : {});
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
+    node = new AudioWorkletNode(ctx, 'strobe', { numberOfInputs: CHORD.length, channelCount: 1, channelCountMode: 'explicit' });
+    node.port.onmessage = e => { latest = e.data.bins; rms = e.data.rms; };
+    node.connect(ctx.destination);
+
+    sum = ctx.createGain();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 16384;
+    chains = CHORD.map(() => [0, 1].map(() => Object.assign(ctx.createBiquadFilter(), { type: 'bandpass' })));
+    wiredStages = -1;
+
+    oscGain = ctx.createGain();
+    monitorGain = ctx.createGain();
+    oscGain.connect(sum);
+    oscGain.connect(monitorGain).connect(ctx.destination);
+    voices = CHORD.map(() => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g).connect(oscGain);
+      o.start();
+      return { o, g };
+    });
+    const H = [0, 1, 0.75, 0.6, 0.5, 0.4, 0.32, 0.25, 0.18, 0.12, 0.08, 0.05, 0.03];
+    brassWave = ctx.createPeriodicWave(new Float32Array(H.length), Float32Array.from(H));
+
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    noiseGain = ctx.createGain();
+    noise.connect(noiseGain).connect(sum);
+    noise.start();
+
+    micGain = ctx.createGain();
+    micGain.connect(sum);
+
+    await ctx.resume();
+    node.port.postMessage(config());
+    await updateAudio();
+    $('run').textContent = 'Stop';
+  } catch (err) {
+    $('err').textContent = err.message;
+  }
+  stats();
+}
+
+async function stop() {
+  if (!ctx) return;
+  const c = ctx;
+  ctx = node = micSrc = latest = null;
+  await c.close();
+  $('run').textContent = 'Start';
+}
+
+async function updateAudio() {
+  if (!ctx) return;
+  const src = $('source').value, f = f0(), bs = bands(), wave = $('wave').value;
+  voices.forEach(({ o, g }, j) => {
+    o.frequency.value = f * CHORD[j][0];
+    o.detune.value = +$('detune').value;
+    if (wave === 'brass') o.setPeriodicWave(brassWave); else o.type = wave;
+    g.gain.value = CHORD[j][0] === 1 || $('chordtone').checked ? 1 : 0;
+  });
+  oscGain.gain.value = src === 'mic' ? 0 : +$('tone').value / 100;
+  noiseGain.gain.value = +$('noise').value / 200;
+  monitorGain.gain.value = $('monitor').checked ? 0.3 : 0;
+  micGain.gain.value = src === 'tone' ? 0 : 1;
+
+  if (src !== 'tone' && !micSrc) {
+    micPromise ??= navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    micStream = await micPromise;
+    if (ctx && !micSrc) {
+      micSrc = ctx.createMediaStreamSource(micStream);
+      micSrc.connect(micGain);
+    }
+  }
+
+  chains.forEach((ch, j) => ch.forEach(fl => { fl.frequency.value = f * (bs[j]?.ratio ?? 1); fl.Q.value = +$('q').value; }));
+  const stages = +$('bp').value;
+  if (stages !== wiredStages) {
+    sum.disconnect();
+    sum.connect(analyser);
+    chains.flat().forEach(fl => fl.disconnect());
+    chains.forEach((ch, j) => {
+      let tail = sum;
+      for (let i = 0; i < stages; i++) tail = tail.connect(ch[i]);
+      tail.connect(node, 0, j);
+    });
+    wiredStages = stages;
+  }
+}
+
+function showOutputs() {
+  $('n-o').value = $('n').value;
+  $('tau-o').value = `${Math.round(tau() * 1000)} ms`;
+  $('gamma-o').value = (+$('gamma').value).toFixed(1);
+  $('gain-o').value = `${$('gain').value} dB`;
+  $('q-o').value = $('q').value;
+  const dt = +$('detune').value;
+  $('detune-o').value = `${dt > 0 ? '+' : ''}${dt.toFixed(1)}¢`;
+  $('tone-o').value = `${$('tone').value}%`;
+  $('noise-o').value = `${$('noise').value}%`;
+  $('rgbset').hidden = $('colormode').value !== 'octave';
+}
+
+function stats() {
+  const sr = ctx ? ctx.sampleRate : (+$('sr').value || 48000);
+  const f = f0(), n = +$('n').value, t = tau(), bs = bands(), chord = $('colormode').value === 'chord';
+  const b = bs.find(x => x.ratio === 1) ?? bs[0];
+  const k = b ? b.periods : +$('k').value;
+  const T = 1 / f, win = k * T;
+  const spp = sr / f, rounded = Math.round(spp);
+  const centHz = f * (2 ** (1 / 1200) - 1);
+  const smear = 1200 * Math.log2(1 + 1 / (2 * t * f));
+  const rows = [
+    ['Target', `${f.toFixed(2)} Hz`],
+    ['Period', `${(T * 1000).toFixed(3)} ms`],
+    ['Strand window', `${(win * 1000).toFixed(2)} ms (${k} periods${chord ? ', green' : bs.length > 1 ? ', band 1' : ''})`],
+    ['Per LED', `${(win / n * 1000).toFixed(3)} ms · ${(sr * win / n).toFixed(1)} samples`],
+    ['Samples / period', `${spp.toFixed(2)} (integer ${rounded} would be ${(1200 * Math.log2(spp / rounded)).toFixed(2)}¢ off)`],
+    ['Drift at 1¢ off', `${(centHz * n / k).toFixed(2)} LEDs/s`],
+    ['Smear limit', `≈ ±${smear.toFixed(0)}¢ (pattern washes out beyond)`],
+    ['Bin updates', `${(sr / n).toFixed(0)}/s per LED · α = ${(1 - Math.exp(-n / (sr * t))).toExponential(2)}`],
+    ['Sample rate', `${sr} Hz${ctx ? '' : ' (not running)'}`],
+  ];
+  if (chord) {
+    const m = +$('note').value;
+    rows.unshift(['Chord (JI vs ET)', bs.map(x => {
+      const dev = 1200 * Math.log2(x.ratio) - 100 * x.semis;
+      return `${noteName(m + x.semis)} ${(f * x.ratio).toFixed(2)} Hz${x.semis ? ` (${dev > 0 ? '+' : ''}${dev.toFixed(1)}¢)` : ''}`;
+    }).join(' · ')]);
+  }
+  $('stats').innerHTML = rows.map(([k, v]) => `<div>${k}: <b>${v}</b></div>`).join('');
+}
+
+function setup(cv, w, h) {
+  const r = devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * r) || cv.height !== Math.round(h * r)) {
+    cv.width = Math.round(w * r);
+    cv.height = Math.round(h * r);
+    cv.style.height = `${h}px`;
+  }
+  const g = cv.getContext('2d');
+  g.setTransform(r, 0, 0, r, 0, 0);
+  return g;
+}
+
+function circle(g, x, y, r) { g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI); g.fill(); }
+
+function drawLeds(colors, ring) {
+  const cv = $('leds'), n = colors.length, w = cv.clientWidth, h = ring ? Math.min(w, 460) : 90;
+  const g = setup(cv, w, h);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  let pos, r;
+  if (ring) {
+    const R = h / 2 - 24;
+    r = Math.min(Math.PI * R / n * 0.7, 12);
+    pos = i => { const a = -Math.PI / 2 + i / n * 2 * Math.PI; return [w / 2 + R * Math.cos(a), h / 2 + R * Math.sin(a)]; };
+  } else {
+    const sp = (w - 16) / n;
+    r = Math.min(sp * 0.35, 12);
+    pos = i => [8 + sp * (i + 0.5), h / 2];
+  }
+  g.fillStyle = '#1c1c1c';
+  colors.forEach((_, i) => circle(g, ...pos(i), r));
+  g.globalCompositeOperation = 'lighter';
+  colors.forEach((c, i) => {
+    if (Math.max(...c) < 2) return;
+    const [x, y] = pos(i), rgb = c.map(Math.round).join();
+    const grd = g.createRadialGradient(x, y, 0, x, y, r * 3);
+    grd.addColorStop(0, `rgba(${rgb},0.5)`);
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    circle(g, x, y, r * 3);
+    g.fillStyle = `rgb(${rgb})`;
+    circle(g, x, y, r);
+  });
+  g.globalCompositeOperation = 'source-over';
+}
+
+function drawTrace(vals, bs) {
+  const cv = $('trace'), w = cv.clientWidth, h = 140, g = setup(cv, w, h);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#333';
+  g.beginPath();
+  g.moveTo(0, h / 2); g.lineTo(w, h / 2);
+  if (bs[0]) for (let i = 1; i < bs[0].periods; i++) { g.moveTo(w * i / bs[0].periods, 0); g.lineTo(w * i / bs[0].periods, h); }
+  g.stroke();
+  vals.forEach((v, j) => {
+    g.strokeStyle = `rgb(${bs[j].color})`;
+    g.beginPath();
+    v.forEach((y, i) => {
+      const x = (i + 0.5) / v.length * w, yy = h / 2 - y * h * 0.45;
+      i ? g.lineTo(x, yy) : g.moveTo(x, yy);
+    });
+    g.stroke();
+  });
+}
+
+const peaks = [];
+function frame() {
+  requestAnimationFrame(frame);
+  const bs = bands(), n = +$('n').value, gamma = +$('gamma').value;
+  const bipolar = $('mode').value === 'bipolar' && bs.length === 1;
+  const agc = $('agc').checked, gain = 10 ** (+$('gain').value / 20);
+  const ok = latest && latest.length === bs.length && latest.every(a => a.length === n);
+  const vals = bs.map((_, j) => {
+    if (!ok) return new Float32Array(n);
+    const a = latest[j];
+    let m = 0;
+    for (const v of a) m = Math.max(m, Math.abs(v));
+    peaks[j] = Math.max(m, (peaks[j] || 0) * 0.97, 1e-5);
+    const s = agc ? 1 / peaks[j] : gain;
+    return a.map(v => Math.max(-1, Math.min(1, v * s)));
+  });
+  const colors = [];
+  for (let i = 0; i < n; i++) {
+    const rgb = [0, 0, 0];
+    bs.forEach((b, j) => {
+      const v = vals[j][i];
+      const [c, mag] = v >= 0 ? [bipolar ? BAND_COLORS.r : b.color, v] : bipolar ? [BAND_COLORS.g, -v] : [b.color, 0];
+      const l = mag ** gamma;
+      for (let k = 0; k < 3; k++) rgb[k] += c[k] * l;
+    });
+    colors.push(rgb.map(x => Math.min(255, x)));
+  }
+  drawLeds(colors, $('layout').value === 'ring');
+  drawTrace(vals, bs);
+  $('level').textContent = ctx ? `Input ${rms > 0 ? (20 * Math.log10(rms)).toFixed(1) : '−∞'} dBFS` : '';
+}
+
+document.querySelector('.controls').addEventListener('input', async e => {
+  showOutputs();
+  stats();
+  if (e.target.id === 'sr') { if (ctx) await start(); return; }
+  node?.port.postMessage(config());
+  try { await updateAudio(); } catch (err) { $('err').textContent = err.message; }
+});
+
+$('run').onclick = async () => {
+  if (!ctx) return start();
+  await stop();
+  micStream?.getTracks().forEach(t => t.stop());
+  micStream = micPromise = null;
+  stats();
+};
+$('reset').onclick = () => node?.port.postMessage('reset');
+
+// YIN: cumulative-mean-normalized difference, first dip below threshold, parabolic refinement
+function detectPitch(buf, sr) {
+  let ss = 0;
+  for (const v of buf) ss += v * v;
+  if (Math.sqrt(ss / buf.length) < 1e-3) return null;
+  const minLag = Math.floor(sr / 1000), maxLag = Math.ceil(sr / 25), W = buf.length - maxLag;
+  const c = new Float32Array(maxLag + 2);
+  c[0] = 1;
+  let run = 0;
+  for (let lag = 1; lag <= maxLag + 1; lag++) {
+    let s = 0;
+    for (let i = 0; i < W; i++) { const d = buf[i] - buf[i + lag]; s += d * d; }
+    run += s;
+    c[lag] = run ? s * lag / run : 1;
+  }
+  let lag = minLag;
+  while (lag <= maxLag && c[lag] >= 0.15) lag++;
+  if (lag > maxLag) return null;
+  while (lag < maxLag && c[lag + 1] < c[lag]) lag++;
+  const den = c[lag - 1] - 2 * c[lag] + c[lag + 1];
+  return sr / (den ? lag + (c[lag - 1] - c[lag + 1]) / (2 * den) : lag);
+}
+
+let detecting = false;
+$('detect').onclick = async () => {
+  if (detecting) return;
+  if (!ctx) await start();
+  if (!ctx) return;
+  detecting = true;
+  $('detect-o').value = 'listening…';
+  const buf = new Float32Array(analyser.fftSize), t0 = performance.now();
+  let f = null;
+  while (!f && ctx && performance.now() - t0 < 3000) {
+    await new Promise(r => setTimeout(r, 150));
+    if (!ctx) break;
+    analyser.getFloatTimeDomainData(buf);
+    f = detectPitch(buf, ctx.sampleRate);
+  }
+  detecting = false;
+  if (!f) { $('detect-o').value = 'no clear pitch'; return; }
+  const exact = 69 + 12 * Math.log2(f / +$('a4').value), m = Math.round(exact), cents = Math.round((exact - m) * 100);
+  if (m < 24 || m > 72) { $('detect-o').value = `${f.toFixed(1)} Hz, out of range`; return; }
+  $('note').value = m;
+  $('detect-o').value = `${f.toFixed(1)} Hz (${cents >= 0 ? '+' : ''}${cents}¢)`;
+  $('note').dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+showOutputs();
+stats();
+frame();
+</script>
+</body>
+</html>
