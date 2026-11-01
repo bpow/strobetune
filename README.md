@@ -10,6 +10,8 @@ Audio samples are placed along the strand by a phase accumulator that wraps ever
 
 ## Running the prototype
 
+Try it online at <https://bpow.github.io/strobetune/>, or run it locally:
+
 ```sh
 npx live-server --port=8000 --open=strobe-proto.html
 ```
