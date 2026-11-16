@@ -14,6 +14,8 @@ npx live-server --port=8000 --open=strobe-proto.html
 
 Serve over localhost rather than `file://` so mic access and AudioWorklet load reliably.
 
+It's also an installable PWA (`manifest.webmanifest`, `sw.js`, `icon-*.png`). The service worker is network-first, so deploys show up immediately and the cache is only an offline fallback. Regenerate the icons with `python3 tools/make-icons.py . 192 512`.
+
 ## How it works
 
 The display is synchronous averaging, which is what a strobe disc does:

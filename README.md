@@ -26,5 +26,6 @@ Features:
 - Optional bandpass at the target pitch
 - Mono, RGB period-band, just-intonation major-chord (3:4:5), and red/green 3:4 color modes
 - A readout of derived values: time per LED, drift per cent, and the smear limit
+- Installable as a web app: on Android, open the online version in Chrome and choose **Install app** (or **Add to Home screen**) from the ⋮ menu. It works offline once loaded.
 
 See [AGENTS.md](AGENTS.md) for design notes, findings, and plans for the ESP32 version.
