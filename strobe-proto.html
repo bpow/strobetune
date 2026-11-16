@@ -61,7 +61,8 @@
       <label><span>Colors</span><select id="colormode">
         <option value="mono">Mono</option>
         <option value="octave">RGB period bands</option>
-        <option value="chord">Major chord 3:4:5 (R:G:B)</option>
+        <option value="chord" selected>Major chord 3:4:5 (R:G:B)</option>
+        <option value="christmas">Christmas 3:4 (R:G)</option>
       </select></label>
       <div id="rgbset" hidden>
         <label><span>Red periods</span><select id="r"><option value="0">off</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></label>
@@ -88,7 +89,7 @@
 
     <fieldset>
       <legend>Input</legend>
-      <label><span>Source</span><select id="source"><option value="tone">Test tone</option><option value="mic">Microphone</option><option value="both">Mic + tone</option></select></label>
+      <label><span>Source</span><select id="source"><option value="tone">Test tone</option><option value="mic" selected>Microphone</option><option value="both">Mic + tone</option></select></label>
       <label><span>Tone waveform</span><select id="wave"><option value="brass">Brass-like</option><option>sine</option><option>sawtooth</option><option>square</option><option>triangle</option></select></label>
       <label><span>Tone plays chord 3:4:5</span><input id="chordtone" type="checkbox"></label>
       <label><span>Tone detune</span><input id="detune" type="range" min="-50" max="50" step="0.5" value="0"><output id="detune-o"></output></label>
@@ -168,7 +169,9 @@ const tau = () => 10 * 300 ** (+$('tau').value / 100) / 1000;
 
 function bands() {
   const mode = $('colormode').value, k = +$('k').value;
-  if (mode === 'chord') return CHORD.map(([ratio, id, semis]) => ({ ratio, semis, periods: k, color: BAND_COLORS[id] }));
+  if (mode === 'chord' || mode === 'christmas')
+    return CHORD.filter(([, id]) => mode === 'chord' || id !== 'b')
+      .map(([ratio, id, semis]) => ({ ratio, semis, periods: k, color: BAND_COLORS[id] }));
   if (mode === 'octave')
     return ['r', 'g', 'b'].map(id => ({ ratio: 1, periods: +$(id).value, color: BAND_COLORS[id] })).filter(b => b.periods > 0);
   return [{ ratio: 1, periods: k, color: AMBER }];
@@ -298,7 +301,7 @@ function showOutputs() {
 
 function stats() {
   const sr = ctx ? ctx.sampleRate : (+$('sr').value || 48000);
-  const f = f0(), n = +$('n').value, t = tau(), bs = bands(), chord = $('colormode').value === 'chord';
+  const f = f0(), n = +$('n').value, t = tau(), bs = bands(), chord = ['chord', 'christmas'].includes($('colormode').value);
   const b = bs.find(x => x.ratio === 1) ?? bs[0];
   const k = b ? b.periods : +$('k').value;
   const T = 1 / f, win = k * T;

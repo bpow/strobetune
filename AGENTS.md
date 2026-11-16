@@ -34,18 +34,19 @@ The display is synchronous averaging, which is what a strobe disc does:
 - **Target:** note select (concert pitch, default B♭2), A4 reference, and Detect pitch.
   - Detect uses YIN autocorrelation (25–1000 Hz, 16384-sample analyser before the filters) and snaps to the nearest 12-TET semitone.
 - **Strand:** LED count, periods across strand, strip or ring layout.
-- **Color modes:**
+- **Color modes** (default: major chord):
   - *Mono:* amber. The bipolar display shows positive values red and negative values green.
   - *RGB period bands:* same pitch, different periods per color, like Peterson bands.
   - *Major chord 3:4:5:* green = selected note, red = ×3/4 (a fourth below), blue = ×5/4 (a just major third above).
     - Each band has its own phase accumulator, its own worklet input, and its own bandpass chain at its pitch.
     - The readout shows the just-intonation deviation from equal temperament (+2.0¢ for the fourth, −13.7¢ for the third).
+  - *Christmas 3:4:* the major chord without blue — green = selected note, red = ×3/4.
 - **Display:** auto or manual gain, sharpness γ, positive-half or bipolar.
 - **Bandpass:** off / 1 / 2 biquad stages at each band's pitch, with adjustable Q. It's optional so you can see the pattern with harmonics present too.
 - **Test input:**
   - Waveforms: brass-like (custom harmonics), sine, saw, square, triangle.
   - Optional 3:4:5 chord tone, detune in cents, and added noise.
-  - Mic input with echo cancellation, noise suppression and auto-gain turned off.
+  - Mic input (the default source) with echo cancellation, noise suppression and auto-gain turned off.
   - Forced sample rates (e.g. 16 kHz or 8 kHz) to approximate the ESP32.
 - **Readout:** period, strand window, time and samples per LED, rounding error if the period were a whole number of samples, drift per cent, smear limit, α.
 

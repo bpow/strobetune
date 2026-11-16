@@ -16,7 +16,7 @@ Try it online at <https://bpow.github.io/strobetune/>, or run it locally:
 npx live-server --port=8000 --open=strobe-proto.html
 ```
 
-Click **Start**. Use the built-in test tone (with a detune slider) or switch the source to the microphone. Serve the page from localhost rather than opening it as a file, so microphone access works.
+Click **Start**. The source defaults to the microphone; switch to the built-in test tone (with a detune slider) to try it without an instrument. Serve the page from localhost rather than opening it as a file, so microphone access works.
 
 Features:
 
@@ -24,7 +24,7 @@ Features:
 - Strip or ring layout, with adjustable LED count and periods across the strand
 - Averaging time constant, gain, and dot sharpness
 - Optional bandpass at the target pitch
-- Mono, RGB period-band, and just-intonation major-chord (3:4:5) color modes
+- Mono, RGB period-band, just-intonation major-chord (3:4:5), and red/green 3:4 color modes
 - A readout of derived values: time per LED, drift per cent, and the smear limit
 
 See [AGENTS.md](AGENTS.md) for design notes, findings, and plans for the ESP32 version.
