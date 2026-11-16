@@ -236,6 +236,7 @@ async function start() {
     node.port.postMessage(config());
     await updateAudio();
     $('run').textContent = 'Stop';
+    await keepAwake();
   } catch (err) {
     $('err').textContent = err.message;
   }
@@ -246,9 +247,24 @@ async function stop() {
   if (!ctx) return;
   const c = ctx;
   ctx = node = micSrc = latest = null;
+  wakeLock?.release();
+  wakeLock = null;
   await c.close();
   $('run').textContent = 'Start';
 }
+
+// screen would otherwise dim while playing hands-free
+let wakeLock = null;
+async function keepAwake() {
+  if (!ctx || wakeLock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    if (!ctx || wakeLock) return lock.release();
+    wakeLock = lock;
+    lock.onrelease = () => { if (wakeLock === lock) wakeLock = null; };
+  } catch { /* denied, e.g. battery saver */ }
+}
+document.addEventListener('visibilitychange', keepAwake);
 
 async function updateAudio() {
   if (!ctx) return;
